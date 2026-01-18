@@ -9,15 +9,15 @@ st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# השם שצילמת
+# שם הלשונית בדיוק כפי שמופיע בגיליון
 WORKSHEET_NAME = "sheet1" 
 
 def get_data():
     try:
-        # קריאה ישירה לדיבאג
+        # קריאה ללא Cache כדי לוודא סנכרון חי
         return conn.read(worksheet=WORKSHEET_NAME, ttl="0s")
     except Exception as e:
-        st.error(f"שגיאת קריאה: {e}")
+        st.error(f"שגיאת תקשורת: {e}")
         return pd.DataFrame(columns=["meeting", "thought"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
@@ -41,5 +41,5 @@ if meeting_id:
                     st.success("נשמר בהצלחה!")
                     st.rerun()
                 except Exception as e:
-                    st.error("נכשלה הכתיבה לגיליון.")
+                    st.error("נכשלה הכתיבה לגיליון. בדוק שהבוט מוגדר כ-Editor.")
                     st.code(str(e))
