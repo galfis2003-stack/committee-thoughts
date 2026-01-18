@@ -9,9 +9,18 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
 
-# --- בחירה מרשימת פגישות ---
-meeting_options = ["פגישה 1", "פגישה 2", "פגישה 3"]
-meeting_id = st.selectbox("בחר מספר פגישה:", options=meeting_options)
+# --- עדכון רשימת המפגשים ---
+meeting_options = [
+    "מפגש התנעה", 
+    "מפגש שני", 
+    "מפגש שלישי", 
+    "מפגש רביעי", 
+    "מפגש חמישי", 
+    "מפגש שישי", 
+    "מפגש שביעי", 
+    "מפגש שמיני"
+]
+meeting_id = st.selectbox("בחר את המפגש הרלוונטי:", options=meeting_options)
 
 if meeting_id:
     st.subheader(f"מחשבות עבור {meeting_id}")
@@ -59,14 +68,13 @@ if meeting_id:
         
         st.divider()
         
-        # 2. ניהול ומחיקת תגובות (חדש!)
+        # 2. ניהול ומחיקת תגובות
         st.subheader("🗑️ ניהול ומחיקת תגובות")
         if st.session_state.thoughts:
+            # יצירת רשימה זמנית למחיקה כדי להימנע מבעיות באינדקס בזמן הלולאה
             for i, thought in enumerate(st.session_state.thoughts):
-                # יצירת שתי עמודות: אחת לטקסט ואחת לכפתור
                 col1, col2 = st.columns([0.85, 0.15])
                 col1.write(f"**{i+1}.** {thought}")
-                # אם לוחצים על מחק, התגובה מוסרת מהרשימה והדף מתרענן
                 if col2.button("מחק", key=f"del_{i}"):
                     st.session_state.thoughts.pop(i)
                     st.rerun() 
@@ -76,4 +84,4 @@ if meeting_id:
     elif admin_password:
         st.sidebar.error("סיסמה שגויה")
 else:
-    st.info("אנא הכנס מספר פגישה כדי להתחיל.")
+    st.info("אנא בחר מפגש כדי להתחיל.")
