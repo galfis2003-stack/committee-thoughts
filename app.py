@@ -5,10 +5,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json
 
-# הגדרות עמוד
 st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-# --- פונקציות חיבור ידניות (כי הן עובדות!) ---
+# --- פונקציות חיבור ---
 def get_sheet_service():
     sa_info = json.loads(st.secrets.connections.gsheets.service_account)
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
@@ -19,6 +18,7 @@ def get_sheet_service():
 def read_data():
     spreadsheet_id = st.secrets.connections.gsheets.spreadsheet.split("/d/")[1].split("/")[0]
     sheet = get_sheet_service()
+    # קריאת כל הטווח כולל כותרות
     result = sheet.values().get(spreadsheetId=spreadsheet_id, range="sheet1!A:B").execute()
     values = result.get('values', [])
     if not values:
@@ -28,61 +28,66 @@ def read_data():
 def save_data(df):
     spreadsheet_id = st.secrets.connections.gsheets.spreadsheet.split("/d/")[1].split("/")[0]
     sheet = get_sheet_service()
-    # כתיבת כל הטבלה מחדש (כולל כותרות) כדי להבטיח סנכרון
+    
+    # 1. ניקוי הגיליון לחלוטין לפני הכתיבה כדי למנוע "שורות רפאים"
+    sheet.values().clear(spreadsheetId=spreadsheet_id, range="sheet1!A:B").execute()
+    
+    # 2. כתיבת הנתונים המעודכנים
     body = {'values': [df.columns.tolist()] + df.values.tolist()}
     sheet.values().update(
         spreadsheetId=spreadsheet_id, range="sheet1!A1",
         valueInputOption="RAW", body=body).execute()
 
-# אתחול OpenAI
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
 
 meetings = ["מפגש התנעה", "מפגש שני", "מפגש שלישי", "מפגש רביעי", "מפגש חמישי", "מפגש שישי", "מפגש שביעי", "מפגש שמיני"]
-meeting_id = st.selectbox("בחר את המפגש הרלוונטי:", options=meetings)
+meeting_id = st.selectbox("בחר מפגש:", options=meetings)
 
 if meeting_id:
     df = read_data()
-    current_thoughts = df[df['meeting'] == meeting_id]['thought'].tolist() if not df.empty else []
+    # סינון התגובות עבור המפגש הנבחר
+    filtered_df = df[df['meeting'] == meeting_id] if not df.empty else pd.DataFrame()
 
     with st.form("add_thought", clear_on_submit=True):
         msg = st.text_area(f"מה המחשבה שלך על {meeting_id}?")
         if st.form_submit_button("שלח מחשבה"):
             if msg:
                 new_row = pd.DataFrame([{"meeting": meeting_id, "thought": msg}])
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                save_data(updated_df)
-                st.success("המחשבה נשמרה בענן!")
+                df = pd.concat([df, new_row], ignore_index=True)
+                save_data(df)
+                st.success("נשמר!")
                 st.rerun()
 
     st.divider()
 
-    # אזור מנהל בסרגל הצד
+    # אזור מנהל
     with st.sidebar:
         st.header("🔐 ניהול")
-        pwd = st.text_input("סיסמה:", type="password")
+        if st.text_input("סיסמה:", type="password") == "1234":
+            st.session_state['admin'] = True
     
-    if pwd == "1234":
-        if st.button(f"🪄 סכם AI עבור {meeting_id}"):
-            if current_thoughts:
-                with st.spinner("מנתח..."):
-                    res = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[{"role": "user", "content": f"סכם את {meeting_id} לנקודות מרכזיות:\n" + "\n".join(current_thoughts)}]
-                    )
-                    st.info(f"סיכום {meeting_id}:")
-                    st.write(res.choices[0].message.content)
-            else:
-                st.warning("אין תגובות לסיכום.")
+    if st.session_state.get('admin'):
+        if st.button(f"🪄 סכם AI - {meeting_id}"):
+            thoughts = filtered_df['thought'].tolist() if not filtered_df.empty else []
+            if thoughts:
+                res = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": f"סכם את המחשבות מ{meeting_id}:\n" + "\n".join(thoughts)}]
+                )
+                st.info(res.choices[0].message.content)
 
-        st.subheader("🗑️ מחיקת תגובות")
-        if current_thoughts:
-            for i, t in enumerate(current_thoughts):
+        st.subheader(f"🗑️ ניהול תגובות")
+        if not filtered_df.empty:
+            for idx, row in filtered_df.iterrows():
+                # טיפול בתצוגת None
+                display_text = str(row['thought']) if pd.notnull(row['thought']) else "תגובה ריקה"
                 col1, col2 = st.columns([0.8, 0.2])
-                col1.write(f"{i+1}. {t}")
-                if col2.button("מחק", key=f"del_{i}"):
-                    # מציאת האינדקס המקורי ומחיקה
-                    df = df.drop(df[(df['meeting'] == meeting_id) & (df['thought'] == t)].index[0])
+                col1.write(f"{display_text}")
+                if col2.button("מחק", key=f"del_{idx}"):
+                    # מחיקה לפי אינדקס מקורי ב-df
+                    df = df.drop(idx)
                     save_data(df)
+                    st.success("נמחק בהצלחה!")
                     st.rerun()
