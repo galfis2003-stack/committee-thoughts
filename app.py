@@ -9,25 +9,23 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
 
-# --- עדכון רשימת המפגשים ---
+# --- רשימת המפגשים ---
 meeting_options = [
-    "מפגש התנעה", 
-    "מפגש שני", 
-    "מפגש שלישי", 
-    "מפגש רביעי", 
-    "מפגש חמישי", 
-    "מפגש שישי", 
-    "מפגש שביעי", 
-    "מפגש שמיני"
+    "מפגש התנעה", "מפגש שני", "מפגש שלישי", "מפגש רביעי", 
+    "מפגש חמישי", "מפגש שישי", "מפגש שביעי", "מפגש שמיני"
 ]
 meeting_id = st.selectbox("בחר את המפגש הרלוונטי:", options=meeting_options)
+
+# --- ניהול הזיכרון לפי מפתח (Meeting ID) ---
+if "all_meetings_data" not in st.session_state:
+    # יוצר מילון שבו לכל מפגש יש רשימת מחשבות משלו
+    st.session_state.all_meetings_data = {m: [] for m in meeting_options}
 
 if meeting_id:
     st.subheader(f"מחשבות עבור {meeting_id}")
     
-    # זיכרון זמני (יוחלף בהמשך ב-Google Sheets לשמירה קבועה)
-    if "thoughts" not in st.session_state:
-        st.session_state.thoughts = []
+    # שליפת המחשבות הספציפיות למפגש שנבחר
+    current_thoughts = st.session_state.all_meetings_data[meeting_id]
 
     # הזנת מחשבה חדשה
     with st.form("thought_form", clear_on_submit=True):
@@ -35,8 +33,9 @@ if meeting_id:
         submitted = st.form_submit_button("שלח מחשבה")
         
         if submitted and new_thought:
-            st.session_state.thoughts.append(new_thought)
-            st.success("המחשבה נשמרה בהצלחה!")
+            st.session_state.all_meetings_data[meeting_id].append(new_thought)
+            st.success(f"המחשבה נשמרה ב-{meeting_id}!")
+            st.rerun() # רענון כדי להציג את התגובה החדשה מיד
 
     st.divider()
 
@@ -45,43 +44,36 @@ if meeting_id:
         st.header("אזור מנהל")
         admin_password = st.text_input("סיסמת מנהל לניהול המערכת:", type="password")
     
-    # בדיקת סיסמה (כרגע מוגדרת כ-1234)
     if admin_password == "1234": 
         st.sidebar.success("מצב מנהל פעיל")
         
-        # 1. כפתור ייצור סיכום AI
-        if st.button("🪄 ייצר סיכום AI"):
-            if st.session_state.thoughts:
-                with st.spinner("ה-AI מנתח את כל המחשבות..."):
-                    all_text = "\n".join(st.session_state.thoughts)
+        # 1. סיכום AI ספציפי למפגש
+        if st.button(f"🪄 ייצר סיכום AI ל-{meeting_id}"):
+            if current_thoughts:
+                with st.spinner(f"ה-AI מנתח את המחשבות של {meeting_id}..."):
+                    all_text = "\n".join(current_thoughts)
                     response = client.chat.completions.create(
                         model="gpt-4o",
                         messages=[
-                            {"role": "system", "content": "אתה עוזר מקצועי לוועדה. סכם את המחשבות הבאות לנקודות מרכזיות."},
-                            {"role": "user", "content": f"להלן המחשבות מ{meeting_id}:\n{all_text}"}
+                            {"role": "system", "content": f"אתה עוזר מקצועי לוועדה. סכם את המחשבות מ{meeting_id} בלבד."},
+                            {"role": "user", "content": f"להלן המחשבות:\n{all_text}"}
                         ]
                     )
-                    st.info("סיכום הוועדה:")
+                    st.info(f"סיכום עבור {meeting_id}:")
                     st.write(response.choices[0].message.content)
             else:
-                st.warning("עדיין אין מחשבות לסכם.")
+                st.warning(f"אין עדיין מחשבות לסכם עבור {meeting_id}.")
         
         st.divider()
         
-        # 2. ניהול ומחיקת תגובות
-        st.subheader("🗑️ ניהול ומחיקת תגובות")
-        if st.session_state.thoughts:
-            # יצירת רשימה זמנית למחיקה כדי להימנע מבעיות באינדקס בזמן הלולאה
-            for i, thought in enumerate(st.session_state.thoughts):
+        # 2. ניהול ומחיקת תגובות ספציפיות
+        st.subheader(f"🗑️ ניהול תגובות - {meeting_id}")
+        if current_thoughts:
+            for i, thought in enumerate(current_thoughts):
                 col1, col2 = st.columns([0.85, 0.15])
                 col1.write(f"**{i+1}.** {thought}")
-                if col2.button("מחק", key=f"del_{i}"):
-                    st.session_state.thoughts.pop(i)
+                if col2.button("מחק", key=f"del_{meeting_id}_{i}"):
+                    st.session_state.all_meetings_data[meeting_id].pop(i)
                     st.rerun() 
         else:
-            st.write("אין כרגע תגובות במערכת.")
-            
-    elif admin_password:
-        st.sidebar.error("סיסמה שגויה")
-else:
-    st.info("אנא בחר מפגש כדי להתחיל.")
+            st.write("אין תגובות במפגש זה.")
