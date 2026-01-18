@@ -9,11 +9,13 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
 
-# --- בעיה 2: כניסה לפי מספר פגישה ---
-meeting_id = st.text_input("הכנס מספר פגישה (למשל: 101):")
+# --- בעיה 2: בחירה מרשימת פגישות ---
+# כאן אתה יכול להוסיף או להסיר פגישות מהרשימה בקלות
+meeting_options = ["פגישה 1", "פגישה 2", "פגישה 3"]
+meeting_id = st.selectbox("בחר מספר פגישה:", options=meeting_options)
 
 if meeting_id:
-    st.subheader(f"מחשבות עבור פגישה מספר {meeting_id}")
+    st.subheader(f"מחשבות עבור {meeting_id}")
     
     # זיכרון זמני (יוחלף בהמשך ב-Google Sheets לשמירה קבועה)
     if "thoughts" not in st.session_state:
@@ -21,7 +23,7 @@ if meeting_id:
 
     # הזנת מחשבה חדשה
     with st.form("thought_form", clear_on_submit=True):
-        new_thought = st.text_area("מה המחשבה שלך בנושא הדיון?")
+        new_thought = st.text_area(f"מה המחשבה שלך בנוגע ל-{meeting_id}?")
         submitted = st.form_submit_button("שלח מחשבה")
         
         if submitted and new_thought:
@@ -35,7 +37,7 @@ if meeting_id:
         st.header("אזור מנהל")
         admin_password = st.text_input("סיסמת מנהל לייצוא סיכום:", type="password")
     
-    # כאן אתה קובע את הסיסמה שלך (למשל: 1234)
+    # הסיסמה שלך נשארה "1234"
     if admin_password == "1234": 
         if st.button("🪄 ייצר סיכום AI (למנהל בלבד)"):
             if st.session_state.thoughts:
@@ -45,7 +47,7 @@ if meeting_id:
                         model="gpt-4o",
                         messages=[
                             {"role": "system", "content": "אתה עוזר מקצועי לוועדה. סכם את המחשבות הבאות לנקודות מרכזיות."},
-                            {"role": "user", "content": f"להלן המחשבות מפגישה {meeting_id}:\n{all_text}"}
+                            {"role": "user", "content": f"להלן המחשבות מ{meeting_id}:\n{all_text}"}
                         ]
                     )
                     st.info("סיכום הוועדה:")
@@ -54,5 +56,3 @@ if meeting_id:
                 st.warning("עדיין אין מחשבות לסכם.")
     elif admin_password:
         st.sidebar.error("סיסמה שגויה")
-else:
-    st.info("אנא הכנס מספר פגישה כדי להתחיל.")
