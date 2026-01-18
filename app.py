@@ -1,46 +1,15 @@
 import streamlit as st
-from openai import OpenAI
 from streamlit_gsheets import GSheetsConnection
-import pandas as pd
 
-st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
+st.title("🔍 בדיקת חיבור סופית")
 
-# בדיקה אם ה-Secrets נטענו - אם לא, האפליקציה תעצור כאן עם הודעה ברורה
-if "connections" not in st.secrets:
-    st.error("⚠️ ה-Secrets לא נטענו! וודא שלחצת על Save ב-Streamlit Cloud.")
-    st.stop()
-
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-# שם הלשונית באותיות קטנות כפי שצילמת
-WORKSHEET_NAME = "sheet1" 
-
-def get_data():
-    try:
-        return conn.read(worksheet=WORKSHEET_NAME, ttl="0s")
-    except Exception as e:
-        # כאן תופיע שגיאת ה-401 אם האימות נכשל
-        st.error(f"שגיאת אימות מול גוגל: {e}")
-        return pd.DataFrame(columns=["meeting", "thought"])
-
-st.title("📝 מערכת איסוף מחשבות לוועדה")
-
-meetings = ["מפגש התנעה", "מפגש שני", "מפגש שלישי", "מפגש רביעי", "מפגש חמישי", "מפגש שישי", "מפגש שביעי", "מפגש שמיני"]
-meeting_id = st.selectbox("בחר מפגש:", options=meetings)
-
-if meeting_id:
-    df = get_data()
-    
-    with st.form("add_thought", clear_on_submit=True):
-        msg = st.text_area(f"מה המחשבה שלך על {meeting_id}?")
-        if st.form_submit_button("שלח מחשבה"):
-            if msg:
-                new_row = pd.DataFrame([{"meeting": meeting_id, "thought": msg}])
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                try:
-                    conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
-                    st.success("נשמר בהצלחה!")
-                    st.rerun()
-                except Exception as e:
-                    st.error("נכשלה הכתיבה. וודא שהבוט הוא Editor בגיליון.")
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    # ניסיון קריאה מהלשונית שצילמת
+    df = conn.read(worksheet="sheet1", ttl="0s")
+    st.success("✅ החיבור הצליח! הנה הנתונים מהגיליון:")
+    st.dataframe(df)
+except Exception as e:
+    st.error("❌ החיבור עדיין נכשל.")
+    st.write(f"סוג השגיאה: {type(e).__name__}")
+    st.code(str(e))
