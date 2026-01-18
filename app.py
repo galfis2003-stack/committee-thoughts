@@ -5,19 +5,23 @@ import pandas as pd
 
 st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-# אתחול חיבורים
+# בדיקה אם ה-Secrets נטענו - אם לא, האפליקציה תעצור כאן עם הודעה ברורה
+if "connections" not in st.secrets:
+    st.error("⚠️ ה-Secrets לא נטענו! וודא שלחצת על Save ב-Streamlit Cloud.")
+    st.stop()
+
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# שם הלשונית בדיוק כפי שמופיע בגיליון
+# שם הלשונית באותיות קטנות כפי שצילמת
 WORKSHEET_NAME = "sheet1" 
 
 def get_data():
     try:
-        # קריאה ללא Cache כדי לוודא חיבור חי
         return conn.read(worksheet=WORKSHEET_NAME, ttl="0s")
     except Exception as e:
-        st.error(f"שגיאת קריאה: {e}")
+        # כאן תופיע שגיאת ה-401 אם האימות נכשל
+        st.error(f"שגיאת אימות מול גוגל: {e}")
         return pd.DataFrame(columns=["meeting", "thought"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
@@ -34,12 +38,9 @@ if meeting_id:
             if msg:
                 new_row = pd.DataFrame([{"meeting": meeting_id, "thought": msg}])
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                
                 try:
-                    # ניסיון עדכון לענן (דורש אימות תקין)
                     conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
                     st.success("נשמר בהצלחה!")
                     st.rerun()
                 except Exception as e:
-                    st.error("נכשלה הכתיבה לגיליון. בדוק שה-Secrets נסגרו בגרשיים.")
-                    st.code(str(e))
+                    st.error("נכשלה הכתיבה. וודא שהבוט הוא Editor בגיליון.")
