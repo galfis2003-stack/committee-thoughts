@@ -36,7 +36,7 @@ if meeting_id:
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 
                 try:
-                    # ניסיון עדכון לענן (דורש Service Account תקין)
+                    # ניסיון עדכון לענן (דורש אימות תקין)
                     conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
                     st.success("נשמר בהצלחה!")
                     st.rerun()
