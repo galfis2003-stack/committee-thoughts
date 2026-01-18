@@ -8,7 +8,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # וודא ששם זה תואם בדיוק לשונית למטה (למשל: "Sheet1" או "גיליון1")
-WORKSHEET_NAME = "גיליון1" 
+WORKSHEET_NAME = "sheet1" 
 
 def get_data():
     try:
