@@ -5,7 +5,7 @@ import pandas as pd
 
 st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-# אתחול
+# אתחול חיבורים
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -14,10 +14,10 @@ WORKSHEET_NAME = "sheet1"
 
 def get_data():
     try:
-        # קריאה ללא Cache כדי לוודא סנכרון חי
+        # קריאה ללא Cache כדי לוודא חיבור חי
         return conn.read(worksheet=WORKSHEET_NAME, ttl="0s")
     except Exception as e:
-        st.error(f"שגיאת תקשורת: {e}")
+        st.error(f"שגיאת קריאה: {e}")
         return pd.DataFrame(columns=["meeting", "thought"])
 
 st.title("📝 מערכת איסוף מחשבות לוועדה")
@@ -36,10 +36,10 @@ if meeting_id:
                 updated_df = pd.concat([df, new_row], ignore_index=True)
                 
                 try:
-                    # ניסיון עדכון לענן
+                    # ניסיון עדכון לענן (דורש Service Account תקין)
                     conn.update(worksheet=WORKSHEET_NAME, data=updated_df)
                     st.success("נשמר בהצלחה!")
                     st.rerun()
                 except Exception as e:
-                    st.error("נכשלה הכתיבה לגיליון. בדוק שהבוט מוגדר כ-Editor.")
+                    st.error("נכשלה הכתיבה לגיליון. בדוק שה-Secrets נסגרו בגרשיים.")
                     st.code(str(e))
