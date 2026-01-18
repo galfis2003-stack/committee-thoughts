@@ -1,50 +1,58 @@
 import streamlit as st
 from openai import OpenAI
 
-# הגדרות עיצוב RTL לעברית
-st.set_page_config(page_title="תיבת מחשבות - ועדה", layout="centered")
-st.markdown("""
-    <style>
-    .stApp { direction: RTL; text-align: right; }
-    textarea { direction: RTL; text-align: right; }
-    div[role="alert"] { direction: RTL; text-align: right; }
-    </style>
-    """, unsafe_allow_html=True)
+# הגדרת כותרת האתר
+st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-st.title("💡 תיבת המחשבות של הוועדה")
-st.write("כאן ניתן לשתף תובנות, רעיונות או הערות מהמפגש האחרון בצורה אנונימית.")
-
-# התחברות ל-OpenAI דרך ה-Secrets של השרת
+# חיבור ל-OpenAI דרך ה-Secrets שהגדרת
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ניהול רשימת המחשבות (זמני ל-Session הנוכחי)
-if 'thoughts' not in st.session_state:
-    st.session_state.thoughts = []
+st.title("📝 מערכת איסוף מחשבות לוועדה")
 
-# ממשק כתיבה
-with st.container():
-    new_thought = st.text_area("מה המחשבה שלך?", placeholder="כתוב כאן את מה שלא הספקת להגיד...", height=150)
-    if st.button("שליחה אנונימית"):
-        if new_thought.strip():
+# --- בעיה 2: כניסה לפי מספר פגישה ---
+meeting_id = st.text_input("הכנס מספר פגישה (למשל: 101):")
+
+if meeting_id:
+    st.subheader(f"מחשבות עבור פגישה מספר {meeting_id}")
+    
+    # זיכרון זמני (יוחלף בהמשך ב-Google Sheets לשמירה קבועה)
+    if "thoughts" not in st.session_state:
+        st.session_state.thoughts = []
+
+    # הזנת מחשבה חדשה
+    with st.form("thought_form", clear_on_submit=True):
+        new_thought = st.text_area("מה המחשבה שלך בנושא הדיון?")
+        submitted = st.form_submit_button("שלח מחשבה")
+        
+        if submitted and new_thought:
             st.session_state.thoughts.append(new_thought)
-            st.success("המחשבה נשמרה במערכת. תודה!")
-        else:
-            st.warning("נא להזין טקסט לפני השליחה.")
+            st.success("המחשבה נשמרה בהצלחה!")
 
-st.divider()
+    st.divider()
 
-# הצגת הסיכום לכולם
-st.header("🔍 סיכום התובנות המרכזיות (AI)")
-if st.button("ייצר סיכום מעודכן"):
-    if len(st.session_state.thoughts) > 1:
-        with st.spinner("ה-AI מנתח את כלל התגובות..."):
-            all_text = " | ".join(st.session_state.thoughts)
-            prompt = f"להלן רשימת מחשבות אנונימיות של חברי ועדה מקצועית: {all_text}. סכם את התמות המרכזיות, נקודות הדמיון והמחלוקת בצורה מקצועית ואנונימית."
-            
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            st.info(response.choices[0].message.content)
-    else:
-        st.info("עדיין אין מספיק תגובות (לפחות 2) כדי לייצר ניתוח משמעותי.")
+    # --- בעיה 3: הרשאת מנהל לייצוא סיכום ---
+    with st.sidebar:
+        st.header("אזור מנהל")
+        admin_password = st.text_input("סיסמת מנהל לייצוא סיכום:", type="password")
+    
+    # כאן אתה קובע את הסיסמה שלך (למשל: 1234)
+    if admin_password == "1234": 
+        if st.button("🪄 ייצר סיכום AI (למנהל בלבד)"):
+            if st.session_state.thoughts:
+                with st.spinner("ה-AI מנתח את כל המחשבות..."):
+                    all_text = "\n".join(st.session_state.thoughts)
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "אתה עוזר מקצועי לוועדה. סכם את המחשבות הבאות לנקודות מרכזיות."},
+                            {"role": "user", "content": f"להלן המחשבות מפגישה {meeting_id}:\n{all_text}"}
+                        ]
+                    )
+                    st.info("סיכום הוועדה:")
+                    st.write(response.choices[0].message.content)
+            else:
+                st.warning("עדיין אין מחשבות לסכם.")
+    elif admin_password:
+        st.sidebar.error("סיסמה שגויה")
+else:
+    st.info("אנא הכנס מספר פגישה כדי להתחיל.")
