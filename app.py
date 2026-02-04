@@ -7,38 +7,31 @@ import json
 
 st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-# --- דיאגנוסטיקה: בדיקה שה-Secrets קיימים לפני שמתחילים ---
-if "connections" not in st.secrets:
-    st.error("❌ שגיאה קריטית: חסרה הכותרת [connections.gsheets] ב-Secrets.")
+# --- בדיקות מקדימות למניעת קריסה ---
+if "connections" not in st.secrets or "gsheets" not in st.secrets.connections:
+    st.error("❌ שגיאה: הגדרות ה-Secrets אינן תקינות.")
     st.stop()
 
-if "gsheets" not in st.secrets.connections:
-    st.error("❌ שגיאה קריטית: חסר החלק של gsheets ב-Secrets.")
-    st.stop()
-
-# --- פונקציות גוגל (הגרסה החסינה ביותר) ---
+# --- פונקציות גוגל (הגרסה היציבה) ---
 def get_sheet_service():
     try:
-        # שליפת המידע הגולמי
         raw_sa = st.secrets.connections.gsheets.service_account
-        
-        # המרה ל-Dictionary (בין אם זה טקסט או כבר אובייקט)
+        # המרה ל-Dictionary וטיפול בפורמטים שונים
         if isinstance(raw_sa, str):
             sa_info = json.loads(raw_sa)
         else:
             sa_info = dict(raw_sa)
         
-        # וידוא שהמפתח הפרטי תקין
+        # תיקון המפתח הפרטי
         if "private_key" in sa_info:
             sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
         
         creds = service_account.Credentials.from_service_account_info(
-            sa_info, 
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
+            sa_info, scopes=['https://www.googleapis.com/auth/spreadsheets']
         )
         return build('sheets', 'v4', credentials=creds, cache_discovery=False).spreadsheets()
     except Exception as e:
-        st.error(f"❌ שגיאה בחיבור לגוגל: {e}")
+        st.error(f"שגיאת חיבור לגוגל: {e}")
         st.stop()
 
 def read_data():
@@ -51,8 +44,7 @@ def read_data():
             return pd.DataFrame(vals[1:], columns=vals[0])
         else:
             return pd.DataFrame(columns=["meeting", "thought"])
-    except Exception as e:
-        # אם יש שגיאה, נחזיר טבלה ריקה כדי שהאתר לא יקרוס
+    except:
         return pd.DataFrame(columns=["meeting", "thought"])
 
 def save_data(df):
@@ -74,31 +66,61 @@ meetings = ["מפגש התנעה", "מפגש שני", "מפגש שלישי", "מ
 meeting_id = st.selectbox("בחר מפגש:", options=meetings)
 
 if meeting_id:
+    # טעינת הנתונים
     df = read_data()
     
+    # טופס להוספת מחשבה (גלוי לכולם)
     with st.form("add_thought", clear_on_submit=True):
         msg = st.text_area(f"מה המחשבה שלך על {meeting_id}?")
-        submitted = st.form_submit_button("שלח מחשבה")
-        if submitted and msg:
-            new_row = pd.DataFrame([{"meeting": meeting_id, "thought": msg}])
-            success = save_data(pd.concat([df, new_row], ignore_index=True))
-            if success:
-                st.success("נשמר בהצלחה!")
-                st.rerun()
+        if st.form_submit_button("שלח מחשבה"):
+            if msg:
+                new_row = pd.DataFrame([{"meeting": meeting_id, "thought": msg}])
+                if save_data(pd.concat([df, new_row], ignore_index=True)):
+                    st.success("התגובה נשמרה בהצלחה!")
+                    st.rerun()
 
+    # --- אזור המנהל (גלוי רק עם סיסמה) ---
     with st.sidebar:
-        st.header("🔐 ניהול")
-        if st.text_input("סיסמה:", type="password") == "1234":
-            if st.button(f"🪄 סכם AI - {meeting_id}"):
-                thoughts = df[df['meeting'] == meeting_id]['thought'].tolist()
-                if thoughts:
+        st.header("🔐 כניסת מנהל")
+        pwd = st.text_input("סיסמה:", type="password")
+        
+        if pwd == "1234":
+            st.success(f"מחובר כמנהל")
+            st.markdown("---")
+            
+            # סינון התגובות למפגש הנוכחי
+            current_thoughts = df[df['meeting'] == meeting_id]
+            thought_list = current_thoughts['thought'].tolist()
+            
+            # 1. כפתור סיכום AI
+            if st.button(f"✨ סכם את {len(thought_list)} התגובות"):
+                if thought_list:
                     try:
                         api_key = st.secrets["OPENAI_API_KEY"].strip()
                         client = OpenAI(api_key=api_key)
-                        res = client.chat.completions.create(
-                            model="gpt-4o", 
-                            messages=[{"role": "user", "content": f"סכם לנקודות את {meeting_id}:\n" + "\n".join(thoughts)}]
-                        )
-                        st.info(res.choices[0].message.content)
+                        with st.spinner("ה-AI מסכם..."):
+                            res = client.chat.completions.create(
+                                model="gpt-4o", 
+                                messages=[{"role": "user", "content": f"סכם בנקודות קצרות את המחשבות הבאות ממפגש '{meeting_id}':\n" + "\n".join(thought_list)}]
+                            )
+                            st.markdown("### 📝 סיכום AI:")
+                            st.info(res.choices[0].message.content)
                     except Exception as e:
                         st.error(f"שגיאת AI: {e}")
+                else:
+                    st.warning("אין תגובות לסכם.")
+
+            st.markdown("---")
+            st.subheader(f"👀 צפייה בתגובות ({len(thought_list)})")
+            
+            # 2. הצגת התגובות אחת-אחת עם אפשרות מחיקה
+            if not current_thoughts.empty:
+                for idx, row in current_thoughts.iterrows():
+                    with st.expander(f"תגובה {idx+1}", expanded=True):
+                        st.write(row['thought'])
+                        if st.button("🗑️ מחק", key=f"del_{idx}"):
+                            new_df = df.drop(idx)
+                            save_data(new_df)
+                            st.rerun()
+            else:
+                st.write("עדיין אין תגובות למפגש זה.")
