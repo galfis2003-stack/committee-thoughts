@@ -7,10 +7,21 @@ import json
 
 st.set_page_config(page_title="מחשבות הוועדה", layout="centered")
 
-# --- פונקציות גוגל (כבר עובדות!) ---
+# --- פונקציות גוגל (חסינות לשגיאות Parsing) ---
 def get_sheet_service():
-    sa_info = json.loads(st.secrets.connections.gsheets.service_account)
-    creds = service_account.Credentials.from_service_account_info(sa_info, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+    # שליפת המידע מה-Secrets
+    sa_data = st.secrets.connections.gsheets.service_account
+    # תיקון ל-ValueError: אם המידע מגיע כמחרוזת, נהפוך אותו לדיקשנרי
+    sa_info = json.loads(sa_data) if isinstance(sa_data, str) else sa_data
+    
+    # תיקון ל-RSA Key: מוודא שתווי ירידת השורה תקינים
+    if "private_key" in sa_info:
+        sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+        
+    creds = service_account.Credentials.from_service_account_info(
+        sa_info, 
+        scopes=['https://www.googleapis.com/auth/spreadsheets']
+    )
     return build('sheets', 'v4', credentials=creds).spreadsheets()
 
 def read_data():
@@ -19,14 +30,18 @@ def read_data():
         res = get_sheet_service().values().get(spreadsheetId=spreadsheet_id, range="sheet1!A:B").execute()
         vals = res.get('values', [])
         return pd.DataFrame(vals[1:], columns=vals[0]) if vals else pd.DataFrame(columns=["meeting", "thought"])
-    except: return pd.DataFrame(columns=["meeting", "thought"])
+    except: 
+        return pd.DataFrame(columns=["meeting", "thought"])
 
 def save_data(df):
-    spreadsheet_id = st.secrets.connections.gsheets.spreadsheet.split("/d/")[1].split("/")[0]
-    service = get_sheet_service()
-    service.values().clear(spreadsheetId=spreadsheet_id, range="sheet1!A:B").execute()
-    body = {'values': [df.columns.tolist()] + df.values.tolist()}
-    service.values().update(spreadsheetId=spreadsheet_id, range="sheet1!A1", valueInputOption="RAW", body=body).execute()
+    try:
+        spreadsheet_id = st.secrets.connections.gsheets.spreadsheet.split("/d/")[1].split("/")[0]
+        service = get_sheet_service()
+        service.values().clear(spreadsheetId=spreadsheet_id, range="sheet1!A:B").execute()
+        body = {'values': [df.columns.tolist()] + df.values.tolist()}
+        service.values().update(spreadsheetId=spreadsheet_id, range="sheet1!A1", valueInputOption="RAW", body=body).execute()
+    except Exception as e:
+        st.error(f"שגיאת שמירה בגיליון: {e}")
 
 # --- ממשק משתמש ---
 st.title("📝 מערכת איסוף מחשבות לוועדה")
@@ -53,19 +68,17 @@ if meeting_id:
                 thoughts = df[df['meeting'] == meeting_id]['thought'].tolist()
                 if thoughts:
                     try:
-                        # וידוא שהמפתח נמשך ללא רווחים מיותרים
+                        # שימוש במפתח החדש מה-Secrets (חייב להיות מפתח שלא נחשף!)
                         api_key = st.secrets["OPENAI_API_KEY"].strip()
-                        
-                        # דיבאג (יוצג רק לך): מוודא שהמפתח מסתיים ב-jUkA
-                        # st.write(f"DEBUG: Key ends with {api_key[-4:]}") 
-
                         client = OpenAI(api_key=api_key)
-                        res = client.chat.completions.create(
-                            model="gpt-4o", 
-                            messages=[{"role": "user", "content": f"סכם לנקודות את המחשבות מ{meeting_id}:\n" + "\n".join(thoughts)}]
-                        )
-                        st.info(f"סיכום {meeting_id}:")
-                        st.write(res.choices[0].message.content)
+                        
+                        with st.spinner("ה-AI מנתח..."):
+                            res = client.chat.completions.create(
+                                model="gpt-4o", 
+                                messages=[{"role": "user", "content": f"סכם לנקודות את המחשבות מ{meeting_id}:\n" + "\n".join(thoughts)}]
+                            )
+                            st.info(f"סיכום {meeting_id}:")
+                            st.write(res.choices[0].message.content)
                     except Exception as e:
                         st.error(f"שגיאת אימות OpenAI: {e}")
                 else:
